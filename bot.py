@@ -63,7 +63,7 @@ class GameView(View):
 class GameSelect(Select):
     def __init__(self, options):
         super().__init__(
-            placeholder="Pilih game",
+            placeholder="Pilih Item",
             min_values=1,
             max_values=1,
             options=options
