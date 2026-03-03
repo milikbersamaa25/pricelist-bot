@@ -72,6 +72,14 @@ class GameSelect(Select):
     async def callback(self, interaction: discord.Interaction):
         game_key = self.values[0]
 
+        # 🔧 FIX: kalau game belum punya kategori
+        if not DATA[game_key]["items"]:
+            await interaction.response.edit_message(
+                content="❌ Kategori / pricelist untuk game ini belum tersedia.",
+                view=None
+            )
+            return
+
         await interaction.response.edit_message(
             content="Pilih produk:",
             view=ItemView(game_key)
