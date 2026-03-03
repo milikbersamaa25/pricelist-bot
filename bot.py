@@ -44,7 +44,7 @@ DATA = load_data()
 # VIEW BUYER
 # =========================
 
-class GameView(View):
+class ItemViewLevel1(View):
     def __init__(self):
         super().__init__(timeout=60)
 
@@ -52,15 +52,16 @@ class GameView(View):
         for key, data in DATA.items():
             options.append(
                 discord.SelectOption(
-                    label=data["name"],
+                    label=data.get("name", key),
                     value=key
                 )
             )
 
-        self.add_item(GameSelect(options))
+        if options:
+            self.add_item(ItemSelectLevel1(options))
 
 
-class GameSelect(Select):
+class ItemSelectLevel1(Select):
     def __init__(self, options):
         super().__init__(
             placeholder="Pilih Item",
@@ -70,51 +71,51 @@ class GameSelect(Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        game_key = self.values[0]
+        item_key = self.values[0]
 
-        # 🔧 FIX: kalau game belum punya kategori
-        if not DATA[game_key]["items"]:
+        if not DATA.get(item_key, {}).get("items"):
             await interaction.response.edit_message(
-                content="❌ Kategori / pricelist untuk game ini belum tersedia.",
+                content="❌ Produk untuk item ini belum tersedia.",
                 view=None
             )
             return
 
         await interaction.response.edit_message(
             content="Pilih produk:",
-            view=ItemView(game_key)
+            view=ItemViewLevel2(item_key)
         )
 
 
-class ItemView(View):
-    def __init__(self, game_key):
+class ItemViewLevel2(View):
+    def __init__(self, item_key):
         super().__init__(timeout=60)
 
         options = []
-        for item_key, item_name in DATA[game_key]["items"].items():
+        for product_key, product_name in DATA[item_key]["items"].items():
             options.append(
                 discord.SelectOption(
-                    label=item_name,
-                    value=f"{game_key}|{item_key}"
+                    label=product_name,
+                    value=f"{item_key}|{product_key}"
                 )
             )
 
-        self.add_item(ItemSelect(options))
+        if options:
+            self.add_item(ItemSelectLevel2(options))
 
 
-class ItemSelect(Select):
+class ItemSelectLevel2(Select):
     def __init__(self, options):
         super().__init__(
-            placeholder="Pilih pricelist",
+            placeholder="Pilih produk",
             min_values=1,
             max_values=1,
             options=options
         )
 
     async def callback(self, interaction: discord.Interaction):
-        game_key, item_key = self.values[0].split("|")
+        item_key, product_key = self.values[0].split("|")
 
-        folder = os.path.join(BASE_FOLDER, "game", game_key, item_key)
+        folder = os.path.join(BASE_FOLDER, "game", item_key, product_key)
 
         if not os.path.exists(folder):
             await interaction.response.send_message(
@@ -142,20 +143,20 @@ class ItemSelect(Select):
 # AUTOCOMPLETE
 # =========================
 
-async def game_autocomplete(interaction: discord.Interaction, current: str):
+async def item_autocomplete(interaction: discord.Interaction, current: str):
     result = []
     for k, v in DATA.items():
-        if current.lower() in v["name"].lower():
-            result.append(app_commands.Choice(name=v["name"], value=k))
+        if current.lower() in v.get("name", "").lower():
+            result.append(app_commands.Choice(name=v.get("name", k), value=k))
     return result[:25]
 
 
-async def produk_autocomplete(interaction: discord.Interaction, current: str):
+async def product_autocomplete(interaction: discord.Interaction, current: str):
     result = []
-    for gk, gv in DATA.items():
-        for ik, iv in gv["items"].items():
-            label = f"{gv['name']} - {iv}"
-            value = f"{gk}|{ik}"
+    for item_key, item_data in DATA.items():
+        for product_key, product_name in item_data.get("items", {}).items():
+            label = f"{item_data.get('name', item_key)} - {product_name}"
+            value = f"{item_key}|{product_key}"
             if current.lower() in label.lower():
                 result.append(app_commands.Choice(name=label, value=value))
     return result[:25]
@@ -176,117 +177,30 @@ async def cekpricelist(interaction: discord.Interaction):
 
     await interaction.response.send_message(
         "Pilih Item:",
-        view=GameView(),
+        view=ItemViewLevel1(),
         ephemeral=True
     )
 
 
+# =====================================================
+# GROUP COMMANDS
+# /add
+# /rename
+# /hapus
+# =====================================================
+
+add_group = app_commands.Group(name="add", description="Tambah data")
+rename_group = app_commands.Group(name="rename", description="Ubah nama data")
+hapus_group = app_commands.Group(name="hapus", description="Hapus data")
+
+
 # =========================
-# ADMIN - ADD GAME
+# /add item
 # =========================
 
-@bot.tree.command(name="admin_add_game", description="Admin - tambah game baru")
-async def admin_add_game(
+@add_group.command(name="item", description="Tambah item baru")
+async def add_item(
     interaction: discord.Interaction,
-    game_key: str,
-    game_name: str
-):
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ Khusus admin.", ephemeral=True)
-        return
-
-    key = game_key.lower().replace(" ", "")
-
-    if key in DATA:
-        await interaction.response.send_message("❌ Game key sudah ada.", ephemeral=True)
-        return
-
-    DATA[key] = {
-        "name": game_name,
-        "items": {}
-    }
-
-    save_data(DATA)
-
-    await interaction.response.send_message(
-        f"✅ Item **{game_name}** berhasil ditambahkan.",
-        ephemeral=True
-    )
-
-
-# =========================
-# ADMIN - RENAME GAME
-# =========================
-
-@bot.tree.command(name="admin_rename_game", description="Admin - ganti nama game")
-@app_commands.autocomplete(game=game_autocomplete)
-async def admin_rename_game(
-    interaction: discord.Interaction,
-    game: str,
-    new_name: str
-):
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ Khusus admin.", ephemeral=True)
-        return
-
-    if game not in DATA:
-        await interaction.response.send_message("❌ Game tidak ditemukan.", ephemeral=True)
-        return
-
-    DATA[game]["name"] = new_name
-    save_data(DATA)
-
-    await interaction.response.send_message(
-        "✅ Nama item berhasil diubah.",
-        ephemeral=True
-    )
-
-
-# =========================
-# ADMIN - DELETE GAME
-# =========================
-
-@bot.tree.command(name="admin_delete_game", description="Admin - hapus game")
-@app_commands.autocomplete(game=game_autocomplete)
-async def admin_delete_game(
-    interaction: discord.Interaction,
-    game: str
-):
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ Khusus admin.", ephemeral=True)
-        return
-
-    if game not in DATA:
-        await interaction.response.send_message("❌ Game tidak ditemukan.", ephemeral=True)
-        return
-
-    base_game_folder = os.path.join(BASE_FOLDER, "game", game)
-    if os.path.exists(base_game_folder):
-        for root, dirs, files in os.walk(base_game_folder, topdown=False):
-            for name in files:
-                os.remove(os.path.join(root, name))
-            for name in dirs:
-                os.rmdir(os.path.join(root, name))
-        os.rmdir(base_game_folder)
-
-    del DATA[game]
-    save_data(DATA)
-
-    await interaction.response.send_message(
-        "✅ Item berhasil dihapus.",
-        ephemeral=True
-    )
-
-
-# =========================
-# ADMIN - ADD ITEM
-# =========================
-
-@bot.tree.command(name="admin_add_item", description="Admin - tambah produk / kategori")
-@app_commands.autocomplete(game=game_autocomplete)
-async def admin_add_item(
-    interaction: discord.Interaction,
-    game: str,
     item_key: str,
     item_name: str
 ):
@@ -294,13 +208,48 @@ async def admin_add_item(
         await interaction.response.send_message("❌ Khusus admin.", ephemeral=True)
         return
 
-    if game not in DATA:
-        await interaction.response.send_message("❌ Game tidak ada.", ephemeral=True)
+    key = item_key.lower().replace(" ", "")
+
+    if key in DATA:
+        await interaction.response.send_message("❌ Item key sudah ada.", ephemeral=True)
         return
 
-    ikey = item_key.lower().replace(" ", "")
+    DATA[key] = {
+        "name": item_name,
+        "items": {}
+    }
 
-    DATA[game]["items"][ikey] = item_name
+    save_data(DATA)
+
+    await interaction.response.send_message(
+        f"✅ Item **{item_name}** berhasil ditambahkan.",
+        ephemeral=True
+    )
+
+
+# =========================
+# /add produk
+# =========================
+
+@add_group.command(name="produk", description="Tambah produk")
+@app_commands.autocomplete(item=item_autocomplete)
+async def add_produk(
+    interaction: discord.Interaction,
+    item: str,
+    product_key: str,
+    product_name: str
+):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Khusus admin.", ephemeral=True)
+        return
+
+    if item not in DATA:
+        await interaction.response.send_message("❌ Item tidak ditemukan.", ephemeral=True)
+        return
+
+    pkey = product_key.lower().replace(" ", "")
+
+    DATA[item]["items"][pkey] = product_name
     save_data(DATA)
 
     await interaction.response.send_message(
@@ -310,27 +259,55 @@ async def admin_add_item(
 
 
 # =========================
-# ADMIN - RENAME ITEM
+# /rename item
 # =========================
 
-@bot.tree.command(name="admin_rename_item", description="Admin - ganti nama produk")
-@app_commands.autocomplete(produk=produk_autocomplete)
-async def admin_rename_item(
+@rename_group.command(name="item", description="Ganti nama item")
+@app_commands.autocomplete(item=item_autocomplete)
+async def rename_item(
     interaction: discord.Interaction,
-    produk: str,
+    item: str,
     new_name: str
 ):
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("❌ Khusus admin.", ephemeral=True)
         return
 
-    game_key, item_key = produk.split("|")
+    if item not in DATA:
+        await interaction.response.send_message("❌ Item tidak ditemukan.", ephemeral=True)
+        return
 
-    if game_key not in DATA or item_key not in DATA[game_key]["items"]:
+    DATA[item]["name"] = new_name
+    save_data(DATA)
+
+    await interaction.response.send_message(
+        "✅ Nama item berhasil diubah.",
+        ephemeral=True
+    )
+
+
+# =========================
+# /rename produk
+# =========================
+
+@rename_group.command(name="produk", description="Ganti nama produk")
+@app_commands.autocomplete(product=product_autocomplete)
+async def rename_produk(
+    interaction: discord.Interaction,
+    product: str,
+    new_name: str
+):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Khusus admin.", ephemeral=True)
+        return
+
+    item_key, product_key = product.split("|")
+
+    if item_key not in DATA or product_key not in DATA[item_key]["items"]:
         await interaction.response.send_message("❌ Produk tidak ditemukan.", ephemeral=True)
         return
 
-    DATA[game_key]["items"][item_key] = new_name
+    DATA[item_key]["items"][product_key] = new_name
     save_data(DATA)
 
     await interaction.response.send_message(
@@ -340,29 +317,65 @@ async def admin_rename_item(
 
 
 # =========================
-# ADMIN - DELETE ITEM
+# /hapus item
 # =========================
 
-@bot.tree.command(name="admin_delete_item", description="Admin - hapus produk / kategori")
-@app_commands.autocomplete(produk=produk_autocomplete)
-async def admin_delete_item(
+@hapus_group.command(name="item", description="Hapus item")
+@app_commands.autocomplete(item=item_autocomplete)
+async def hapus_item(
     interaction: discord.Interaction,
-    produk: str
+    item: str
 ):
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message("❌ Khusus admin.", ephemeral=True)
         return
 
-    game_key, item_key = produk.split("|")
+    if item not in DATA:
+        await interaction.response.send_message("❌ Item tidak ditemukan.", ephemeral=True)
+        return
 
-    if game_key not in DATA or item_key not in DATA[game_key]["items"]:
+    base_folder = os.path.join(BASE_FOLDER, "game", item)
+    if os.path.exists(base_folder):
+        for root, dirs, files in os.walk(base_folder, topdown=False):
+            for name in files:
+                os.remove(os.path.join(root, name))
+            for name in dirs:
+                os.rmdir(os.path.join(root, name))
+        os.rmdir(base_folder)
+
+    del DATA[item]
+    save_data(DATA)
+
+    await interaction.response.send_message(
+        "✅ Item berhasil dihapus.",
+        ephemeral=True
+    )
+
+
+# =========================
+# /hapus produk
+# =========================
+
+@hapus_group.command(name="produk", description="Hapus produk")
+@app_commands.autocomplete(product=product_autocomplete)
+async def hapus_produk(
+    interaction: discord.Interaction,
+    product: str
+):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Khusus admin.", ephemeral=True)
+        return
+
+    item_key, product_key = product.split("|")
+
+    if item_key not in DATA or product_key not in DATA[item_key]["items"]:
         await interaction.response.send_message("❌ Produk tidak ditemukan.", ephemeral=True)
         return
 
-    del DATA[game_key]["items"][item_key]
+    del DATA[item_key]["items"][product_key]
     save_data(DATA)
 
-    folder = os.path.join(BASE_FOLDER, "game", game_key, item_key)
+    folder = os.path.join(BASE_FOLDER, "game", item_key, product_key)
     if os.path.exists(folder):
         for f in os.listdir(folder):
             os.remove(os.path.join(folder, f))
@@ -375,14 +388,14 @@ async def admin_delete_item(
 
 
 # =========================
-# ADMIN - UPDATE IMAGE
+# UPDATE PRICELIST
 # =========================
 
 @bot.tree.command(name="update_pricelist", description="Admin - update gambar pricelist")
-@app_commands.autocomplete(produk=produk_autocomplete)
+@app_commands.autocomplete(product=product_autocomplete)
 async def update_pricelist(
     interaction: discord.Interaction,
-    produk: str,
+    product: str,
     image1: discord.Attachment,
     image2: discord.Attachment | None = None,
     image3: discord.Attachment | None = None,
@@ -394,9 +407,9 @@ async def update_pricelist(
 
     await interaction.response.defer(ephemeral=True)
 
-    game_key, item_key = produk.split("|")
+    item_key, product_key = product.split("|")
 
-    folder = os.path.join(BASE_FOLDER, "game", game_key, item_key)
+    folder = os.path.join(BASE_FOLDER, "game", item_key, product_key)
     os.makedirs(folder, exist_ok=True)
 
     for f in os.listdir(folder):
@@ -425,6 +438,11 @@ async def update_pricelist(
 async def on_ready():
     global DATA
     DATA = load_data()
+
+    bot.tree.add_command(add_group)
+    bot.tree.add_command(rename_group)
+    bot.tree.add_command(hapus_group)
+
     await bot.tree.sync()
     print(f"Bot siap sebagai {bot.user}")
 
