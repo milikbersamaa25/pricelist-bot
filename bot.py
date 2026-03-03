@@ -165,17 +165,17 @@ async def produk_autocomplete(interaction: discord.Interaction, current: str):
 # SLASH BUYER
 # =========================
 
-@bot.tree.command(name="cekpricelist", description="Cek pricelist game")
+@bot.tree.command(name="cekpricelist", description="Cek pricelist item")
 async def cekpricelist(interaction: discord.Interaction):
     if not DATA:
         await interaction.response.send_message(
-            "Belum ada game yang tersedia.",
+            "Belum ada item yang tersedia.",
             ephemeral=True
         )
         return
 
     await interaction.response.send_message(
-        "Pilih game:",
+        "Pilih Item:",
         view=GameView(),
         ephemeral=True
     )
@@ -209,7 +209,7 @@ async def admin_add_game(
     save_data(DATA)
 
     await interaction.response.send_message(
-        f"✅ Game **{game_name}** berhasil ditambahkan.",
+        f"✅ Item **{game_name}** berhasil ditambahkan.",
         ephemeral=True
     )
 
@@ -237,7 +237,7 @@ async def admin_rename_game(
     save_data(DATA)
 
     await interaction.response.send_message(
-        "✅ Nama game berhasil diubah.",
+        "✅ Nama item berhasil diubah.",
         ephemeral=True
     )
 
@@ -273,7 +273,7 @@ async def admin_delete_game(
     save_data(DATA)
 
     await interaction.response.send_message(
-        "✅ Game berhasil dihapus.",
+        "✅ Item berhasil dihapus.",
         ephemeral=True
     )
 
